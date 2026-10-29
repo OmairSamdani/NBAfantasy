@@ -1,12 +1,27 @@
 import pandas as pd
-from nba_api.stats.endpoints import leaguedashplayerstats
 
-stats = leaguedashplayerstats.LeagueDashPlayerStats(
-    season="2025-26", per_mode_detailed="PerGame", timeout=60
-)
-df = stats.get_data_frames()[0]
+df = pd.read_csv("players_2025_26.csv")
 
-print(df.head())
-print(df.columns.tolist())
+# Keep players with real playing time
+df = df[(df["MIN"] > 20) & (df["GP"] > 20)].copy()
 
-df.to_csv("players_2025_26.csv", index=False)
+# League's scoring weights
+weights = {
+    "PTS": 1,
+    "REB": 1.2,
+    "AST": 1.5,
+    "STL": 3,
+    "BLK": 3,
+    "TOV": -1,
+}
+
+# Fantasy points per game = sum of (stat * weight)
+df["FPTS_pg"] = 0
+for stat, w in weights.items():
+    df["FPTS_pg"] += df[stat] * w
+
+# Fantasy points total (all games played)
+df["FPTS_total"] = df["FPTS_pg"] * df["GP"]
+
+top = df.sort_values("FPTS_pg", ascending=False)
+print(top[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "FPTS_pg", "FPTS_total"]].head(30).to_string(index=False))
