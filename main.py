@@ -1,27 +1,26 @@
 import pandas as pd
 
-df = pd.read_csv("players_2025_26.csv")
+LEAGUE_TEAMS = 12   # <-- change to your league size
+ACTIVE_SPOTS = 10   # <-- starting lineup slots per team (not bench)
+ONLY_PLAYED_THIS_SEASON = False  # True hides players with no 2026-27 games yet
+TOP_N = 60
 
-# Keep players with real playing time
-df = df[(df["MIN"] > 20) & (df["GP"] > 20)].copy()
+proj = pd.read_csv("projections_2026_27.csv")
+if ONLY_PLAYED_THIS_SEASON:
+    proj = proj[proj["gp_cur"] > 0].copy()
 
-# League's scoring weights
-weights = {
-    "PTS": 1,
-    "REB": 1.2,
-    "AST": 1.5,
-    "STL": 3,
-    "BLK": 3,
-    "TOV": -1,
-}
+# replacement level = per-game production of the last starter-level player in your league
+repl_rank = LEAGUE_TEAMS * ACTIVE_SPOTS
+by_pg = proj.sort_values("proj_fpts_pg", ascending=False).reset_index(drop=True)
+repl_pg = by_pg.loc[min(repl_rank, len(by_pg) - 1), "proj_fpts_pg"]
 
-# Fantasy points per game = sum of (stat * weight)
-df["FPTS_pg"] = 0
-for stat, w in weights.items():
-    df["FPTS_pg"] += df[stat] * w
+# a game he misses is filled by a replacement player, so it costs (his pg - replacement pg), not all of his pg
+proj["vor"] = (proj["proj_fpts_pg"] - repl_pg) * proj["proj_gp"]
+proj["rank_total"] = proj["proj_total"].rank(ascending=False).astype(int)
+proj = proj.sort_values("vor", ascending=False).reset_index(drop=True)
+proj["rank_vor"] = proj.index + 1
 
-# Fantasy points total (all games played)
-df["FPTS_total"] = df["FPTS_pg"] * df["GP"]
-
-top = df.sort_values("FPTS_pg", ascending=False)
-print(top[["PLAYER_NAME", "TEAM_ABBREVIATION", "GP", "FPTS_pg", "FPTS_total"]].head(30).to_string(index=False))
+print(f"Replacement level: {repl_pg:.1f} FPTS/game (the #{repl_rank} player by per-game production)\n")
+cols = ["rank_vor", "rank_total", "PLAYER_NAME", "TEAM_ABBREVIATION", "proj_min",
+        "proj_fpts_pg", "proj_gp", "proj_total", "vor"]
+print(proj[cols].head(TOP_N).round(1).to_string(index=False))
